@@ -1,15 +1,15 @@
 package routes
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/Joel-K-Muraguri/go-jwt/controllers"
+	"github.com/Joel-K-Muraguri/go-jwt/middleware"
+	"github.com/gin-gonic/gin"
 )
 
 func UserRoutes(incomingRoutes *gin.Engine){
 
-	incomingRoutes.POST("/users/login", controllers.LogIn())
-	incomingRoutes.POST("/users/signup", controllers.SignUp())
-
-
+	incomingRoutes.Use(middleware.Authenticate())
+	incomingRoutes.GET("/users", controllers.GetUsers())
+	incomingRoutes.GET("user/id", controllers.GetUserById())
 
 }
