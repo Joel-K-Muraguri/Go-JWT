@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -11,40 +13,100 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var userCollection *mongo.Collection = database.OpenCollection(database.Client, "User")
 var validate = validator.New()
 
 
-func HashPassword(){
+func HashPassword(password string) string{
+	bytes, err := bcrypt.GenerateFromPassword([]byte (password), 14)
+
+	if err != nil {
+		log.Panic(err)	
+	}
+	return string(bytes)
 
 }
 
-func VerifyPassword(){
+func VerifyPassword(userPassword string, loginPassword string)(bool, string){
+	err := bcrypt.CompareHashAndPassword([]byte( userPassword), []byte (loginPassword))
+	msg := ""
+	check := true
+
+	if err != nil {
+		msg = fmt.Sprint("Password for this email is wrong")
+		check = false
+	}
+
+	return check, msg
 
 }
 
 func SignUp() gin.HandlerFunc{
 	return func(ctx *gin.Context) {
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		var c, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		var user models.User
 
-		
+		if err := ctx.BindJSON(&user); err != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		validationError := validate.Struct(user)
+		if validationError != nil {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": validationError.Error()})
+			return
+		}
+
+		count, err := userCollection.CountDocuments(c, bson.M{"email" : user.Email })
+		defer cancel()
+		if err != nil {
+			log.Panic(err)
+			ctx.JSON(http.StatusInternalServerError, gin.H { "error": "error occurred when processing your email "})	
+		}
+
+		password := HashPassword(*user.Password)
+		user.Password = &password
+
+		count, err = userCollection.CountDocuments(c, bson.M{"phone" : user.Phone_Number })
+		defer cancel()
+		if err != nil {
+			log.Panic(err)
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "error occurred when processing your phone number "})	
+		}
+
+		if count > 0 {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error":"this email or phone number already exists"})
+		}
+
+
+		user.Created_at, _ = time.Parse(time.RFC1123, time.Now().Format(time.RFC1123))
+		user.Updated_at, _ = time.Parse(time.RFC1123, time.Now().Format(time.RFC1123))
+		user.ID = string(primitive.NewObjectID())
+		user.User_ID  = user.ID.Hex()
+		token, refresh_token, _ := helper.GenerateTokens()
 
 
 
 
-
-
+	
 	}
-
 }
 
 
 func LogIn() gin.HandlerFunc{
-	
+	return func(ctx *gin.Context) {
+		var c, err = context.WithTimeout(context.Background(), 100*time.Second)
+		var user models.User
+		var foundUser models.User
+
+
+
+	}
 }
 
 
@@ -76,9 +138,5 @@ func GetUserById() gin.HandlerFunc{
 		ctx.JSON(http.StatusOK, user)
 
 
-
-
 	}
-
-
 }

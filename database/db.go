@@ -50,7 +50,7 @@ var Client *mongo.Client = DBSetUp()
 
 
 func OpenCollection(client *mongo.Client, collectionName string) *mongo.Collection{
-	var collection *mongo.Collection = (*mongo.Collection)(client.Database(""cluster0).Collection(collectionName))
+	var collection *mongo.Collection = (*mongo.Collection)(client.Database("cluster0").Collection(collectionName))
 	return collection
 
 }

@@ -9,10 +9,10 @@ import (
 func MatchUserTypeById(ctx *gin.Context, userId string)(err error){
 
 	userType := ctx.GetString("user_type")
-	uid := ctx.GetString("uid")
+	uuid := ctx.GetString("uid")
 	err = nil
 
-	if userType == "USER" && uid != userId {
+	if userType == "USER" && uuid != userId {
 		err = errors.New("unauthorized to access this resource")
 		return err
 	}
