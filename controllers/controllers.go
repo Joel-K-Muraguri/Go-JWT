@@ -84,25 +84,57 @@ func SignUp() gin.HandlerFunc{
 		}
 
 
-		user.Created_at, _ = time.Parse(time.RFC1123, time.Now().Format(time.RFC1123))
-		user.Updated_at, _ = time.Parse(time.RFC1123, time.Now().Format(time.RFC1123))
-		user.ID = string(primitive.NewObjectID())
+		user.Created_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		user.Updated_at, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+		user.ID = primitive.NewObjectID()
 		user.User_ID  = user.ID.Hex()
-		token, refresh_token, _ := helper.GenerateTokens()
+		token, refresh_token, _ := helper.GenerateTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_type,*&user.User_ID)
+		user.Token = &token
+		user.Refresh_token = &refresh_token
 
-
-
-
-	
+		resultInsertionNUmber, insertErr := userCollection.InsertOne(c, user)
+		if insertErr != nil {
+			msg := fmt.Sprintf("Error: User not created")
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+			return		
+		}
+		defer cancel()
+		ctx.JSON(http.StatusOK, resultInsertionNUmber)
 	}
 }
 
 
 func LogIn() gin.HandlerFunc{
 	return func(ctx *gin.Context) {
-		var c, err = context.WithTimeout(context.Background(), 100*time.Second)
+		var c, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		var user models.User
 		var foundUser models.User
+
+
+		if err := ctx.BindJSON(&user); err != nil{
+			ctx.JSON(http.StatusBadRequest, gin.H{"Error": err.Error()} )
+		}
+
+		err := userCollection.FindOne(c, bson.M{"error": user.Email}).Decode(&foundUser)
+		defer cancel()
+		if err!= nil{
+			ctx.JSON(http.StatusInternalServerError, gin.H{"error" : "email or password is incorrect"})
+			return
+		}
+
+		passwordIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+		defer cancel()
+		if passwordIsValid != true{
+			ctx.JSON(http.StatusInternalServerError, gin.H{"Error": msg})
+			return
+		}
+
+		if foundUser.Email == nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H {"Error": "user not found"})
+		}
+
+		token, refresh_token := helper.GenerateTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_type, foundUser.User_ID)
+		helper.UpdateTokens(token, refresh_token, foundUser.User_ID)
 
 
 
@@ -117,17 +149,17 @@ func GetUsers() gin.HandlerFunc{
 
 func GetUserById() gin.HandlerFunc{
 	return func(ctx *gin.Context) {
-		userId := ctx.Params("id")
+		userId := ctx.Param("id")
 
 		if err := helper.MatchUserTypeById(ctx, userId); err != nil {
 			ctx.JSON(http.StatusBadRequest, gin.H{"error":err.Error()})
 			return
 		}
 
-		var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		var c, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 
 		var user models.User
-		err := userCollection.FindOne(ctx, bson.M{"id":userId }).Decode(&user)
+		err := userCollection.FindOne(c, bson.M{"id":userId }).Decode(&user)
 		defer cancel()
 
 		if err != nil {
