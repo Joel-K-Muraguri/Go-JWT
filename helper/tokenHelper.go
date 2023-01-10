@@ -2,8 +2,9 @@ package helper
 
 import (
 	"context"
+	"fmt"
 	"log"
-	"os/user"
+	"os"
 	"time"
 
 	"github.com/Joel-K-Muraguri/go-jwt/database"
@@ -15,6 +16,7 @@ import (
 )
 
 var userCollection *mongo.Collection = database.OpenCollection(database.Client, "user")
+var SECRET_KEY string = os.Getenv("SECRET_KEY")
 
 type SignedDetails struct{
 	Email string
@@ -35,6 +37,54 @@ func GenerateTokens(email string, first_name string, last_name string, user_type
 		},
 	}
 
+	refreshClaims := &SignedDetails{
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: time.Now().Local().Add(time.Hour + time.Duration(168)).Unix(),
+		},
+	}
+
+	token ,err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([] byte (SECRET_KEY))
+	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString([] byte (SECRET_KEY)) 
+
+	if err != nil {
+		log.Fatal(err)
+		return
+	}
+
+	return token, refreshToken, err
+
+}
+
+func ValidateToken(signedToken string)(claims *SignedDetails, msg string){
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedDetails{},
+		func(t *jwt.Token) (interface{}, error) {
+			return []byte(SECRET_KEY), nil
+		},
+	)
+
+	if err != nil {
+		msg = err.Error()
+		return	
+	}
+
+	claims, ok := token.Claims.(*SignedDetails)
+	if !ok {
+		msg = fmt.Sprintf("The token is invalid")
+		msg = err.Error()
+		return
+	
+	}
+
+	if claims.ExpiresAt < time.Now().Local().Unix() {
+		msg = fmt.Sprintf("The token is expired")
+		msg = err.Error()
+		return
+		
+	}
+
+	return claims, msg
 }
 
 
@@ -43,11 +93,11 @@ func UpdateTokens(signedToken string, signedRefreshToken string, userId string){
 
 	var updateObj primitive.D
 
-	updateObj = append(updateObj, bson.E{"token" , signedToken} )
-	updateObj = append(updateObj, bson.E{"Refresh Token", signedRefreshToken})
+	updateObj = append(updateObj, bson.E{Key: "token" , Value: signedToken} )
+	updateObj = append(updateObj, bson.E{Key: "Refresh Token", Value: signedRefreshToken})
 
 	Updated_at, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
-	updateObj = append(updateObj, bson.E{"Updated at", Updated_at})
+	updateObj = append(updateObj, bson.E{Key: "Updated at", Value: Updated_at})
 
 	upsert := true
 	filter := bson.M{"userId" : userId}
@@ -59,7 +109,7 @@ func UpdateTokens(signedToken string, signedRefreshToken string, userId string){
 		ctx, 
 		filter,
 		bson.D{
-			{"$set", updateObj},
+			{Key: "$set", Value: updateObj},
 
 		},
 		&opt,

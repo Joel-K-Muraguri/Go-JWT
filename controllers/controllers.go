@@ -2,9 +2,11 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Joel-K-Muraguri/go-jwt/database"
@@ -135,16 +137,72 @@ func LogIn() gin.HandlerFunc{
 
 		token, refresh_token := helper.GenerateTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_type, foundUser.User_ID)
 		helper.UpdateTokens(token, refresh_token, foundUser.User_ID)
+		err = userCollection.FindOne(c, bson.M{"userId": foundUser.User_ID}).Decode(&foundUser)
 
+		if err != nil {
+			ctx.JSON(http.StatusInternalServerError, gin.H{"Error" :  err.Error()})
+			return
+			
+		}
 
-
+		ctx.JSON(http.StatusOK, foundUser)
 	}
 }
 
 
 func GetUsers() gin.HandlerFunc{
+	return func(ctx *gin.Context) {
+		if err := helper.CheckUserType(ctx, "ADMIN"); err != nil  {
+			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+			
+		}
+
+		var c,cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		recordPerPage, err := strconv.Atoi(ctx.Query("recordPerPage"))
+
+		if err != nil || recordPerPage < 1{
+			recordPerPage = 10
+		}
+		page, err := strconv.Atoi(ctx.Query("page"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		startIndex := (page -  1) * recordPerPage
+		startIndex, err = strconv.Atoi(ctx.Query("startIndex"))
+		
+		matchStage := bson.D{{"$match", bson.D{{}}}}
+		groupStage := bson.D{{"$group", bson.D{
+			{"_id", bson.D{{"_id", "null"}}}, 
+			{"total_count", bson.D{{"$sum", 1}}}, 
+			{"data", bson.D{{"$push", "$$ROOT"}}}}}}
+		projectStage := bson.D{
+			{"$project", bson.D{
+				{"_id", 0},
+				{"total_count", 1},
+				{"user_items", bson.D{{"$slice", []interface{}{"$data", startIndex, recordPerPage}}}},}},
+
+	}
+
+	result, err := userCollection.Aggregate(ctx, mongo.Pipeline{
+		matchStage, groupStage, projectStage,
+	})
+	defer cancel()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"User": "error occurred when listing users"})
+
+	}
+
+	var allUsers []bson.M
+	if err = result.All(ctx, &allUsers);( err!= nil) {
+		log.Fatal(err)
+		
+	}
+	ctx.JSON(http.StatusOK, allUsers[0])
 
 
+}
 }
 
 func GetUserById() gin.HandlerFunc{
@@ -168,7 +226,5 @@ func GetUserById() gin.HandlerFunc{
 		}
 
 		ctx.JSON(http.StatusOK, user)
-
-
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/tools/go/analysis/passes/nilfunc"
 )
 
 func DBSetUp()  *mongo.Client{
